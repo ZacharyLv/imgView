@@ -5,6 +5,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'albums_page.dart' as albums;
+import 'slideshow.dart';
 
 void main() {
   runApp(const ImageViewApp());
@@ -22,8 +24,91 @@ class ImageViewApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.black),
         useMaterial3: true,
       ),
-      home: const ImageLoaderPage(),
+      home: const _HomeRouter(),
     );
+  }
+}
+
+class _HomeRouter extends StatelessWidget {
+  const _HomeRouter();
+
+  @override
+  Widget build(BuildContext context) {
+    return const AlbumsEntry();
+  }
+}
+
+class AlbumsEntry extends StatelessWidget {
+  const AlbumsEntry({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const AlbumsScaffold();
+  }
+}
+
+class AlbumsScaffold extends StatelessWidget {
+  const AlbumsScaffold({super.key});
+  static final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
+
+  @override
+  Widget build(BuildContext context) {
+    // Lazy import to avoid circular deps at compile time
+    return PopScope(
+      canPop: false, // never exit app via system back from this root
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        final nav = _navKey.currentState;
+        if (nav != null && nav.canPop()) {
+          nav.pop();
+        } else {
+          // We are on the albums list (root). Exit to home screen.
+          SystemNavigator.pop();
+        }
+      },
+      child: Navigator(
+        key: _navKey,
+        onGenerateRoute: (settings) {
+          return MaterialPageRoute(
+            builder: (_) {
+              // ignore: avoid_print
+              print('Loading AlbumsPage...');
+              // Import here
+              return _AlbumsHost();
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AlbumsHost extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    // This indirection allows keeping slideshow types in this file
+    // while AlbumsPage resides in a separate file.
+    return const _AlbumsPageProxy();
+  }
+}
+
+// A small proxy widget to keep imports one-way
+class _AlbumsPageProxy extends StatelessWidget {
+  const _AlbumsPageProxy();
+
+  @override
+  Widget build(BuildContext context) {
+    // ignore: avoid_relative_lib_imports
+    // ignore_for_file: implementation_imports
+    // Proper import:
+    return _AlbumsReal();
+  }
+}
+
+class _AlbumsReal extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return const albums.AlbumsPage();
   }
 }
 
@@ -163,135 +248,4 @@ class _ImageLoaderPageState extends State<ImageLoaderPage> {
   }
 }
 
-class FullScreenSlideshow extends StatefulWidget {
-  const FullScreenSlideshow({
-    super.key,
-    required this.imagePaths,
-    this.interval = const Duration(seconds: 3),
-  });
-
-  final List<String> imagePaths;
-  final Duration interval;
-
-  @override
-  State<FullScreenSlideshow> createState() => _FullScreenSlideshowState();
-}
-
-class _FullScreenSlideshowState extends State<FullScreenSlideshow> {
-  late final PageController _controller;
-  Timer? _timer;
-  int _currentIndex = 0;
-  bool _isPlaying = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = PageController();
-    _enterImmersiveMode();
-    _startTimer();
-  }
-
-  void _enterImmersiveMode() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-  }
-
-  void _restoreSystemUi() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  }
-
-  void _startTimer() {
-    _timer?.cancel();
-    if (!_isPlaying || widget.imagePaths.length < 2) {
-      return;
-    }
-    _timer = Timer.periodic(widget.interval, (_) => _nextImage());
-  }
-
-  void _nextImage() {
-    if (!_controller.hasClients) return;
-    final total = widget.imagePaths.length;
-    final nextIndex = (_currentIndex + 1) % total;
-    _controller.animateToPage(
-      nextIndex,
-      duration: const Duration(milliseconds: 450),
-      curve: Curves.easeInOut,
-    );
-  }
-
-  void _togglePlay() {
-    setState(() => _isPlaying = !_isPlaying);
-    if (_isPlaying) {
-      _startTimer();
-    } else {
-      _timer?.cancel();
-    }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _controller.dispose();
-    _restoreSystemUi();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: MediaQuery.removeViewPadding(
-        context: context,
-        removeTop: true,
-        removeBottom: true,
-        child: MediaQuery.removePadding(
-          context: context,
-          removeTop: true,
-          removeBottom: true,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _togglePlay,
-            child: PageView.builder(
-              controller: _controller,
-              onPageChanged: (index) {
-                setState(() => _currentIndex = index);
-                if (_isPlaying) {
-                  _startTimer();
-                }
-              },
-              itemCount: widget.imagePaths.length,
-              itemBuilder: (context, index) {
-                final path = widget.imagePaths[index];
-                return _FullScreenImage(path: path);
-              },
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FullScreenImage extends StatelessWidget {
-  const _FullScreenImage({required this.path});
-
-  final String path;
-
-  @override
-  Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Colors.black,
-      child: SizedBox.expand(
-        child: FittedBox(
-          fit: BoxFit.cover,
-          child: Image.file(
-            File(path),
-            errorBuilder: (context, error, stackTrace) => const Text(
-              '无法显示该图片',
-              style: TextStyle(color: Colors.white70),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
+// Slideshow widget moved to slideshow.dart
